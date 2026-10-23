@@ -89,7 +89,7 @@ def main():
     #SOCK_RAW - access to raw packet data
     #IPPROTO_ICMP - icmp protocol
 
-    print(f"PING {host} ({dest_ip})")
+    print(f"Pinging <3 {host} ({dest_ip})")
 
     for seq in range(1,5): #sending four ping requests
         result = ping_once(sock, dest_ip, ident, seq) #sends packet and waits 2 second
