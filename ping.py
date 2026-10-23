@@ -41,22 +41,65 @@ def build_packet(ident: int, seq: int) -> bytes:
 
 def ping_once(sock, dest_ip, ident, seq, timeout=2.0):
     sock.sendto(build_packet(ident,seq), (dest_ip, 0))
-    start = time.time()
+    #build icmp echo request
+    #it uses port 0, because icmp doesnt use tcp\udp ports
+    start = time.time() #for rtt
     while True:
         remaining = timeout - (time.time() - start)
         if remaining <= 0:
             return None
-        sock.setttimeout(remaining)
+        sock.settimeout(remaining)
+        #settimeout tells socket how long should it wait
         try:
-            data, addr = sock.recvfrom(1024)
+            data, addr = sock.recvfrom(1024) #wait for a packet of up to 1024 bytes
         except socket.timeout:
             return None
-        rtt =(time.time()-start)*1000
+        rtt =(time.time()-start)*1000 #converted from second to ms
 
-        ihl = (data[0] & 0x0F) *4
-        ttl = data[8]
+        ihl = (data[0] & 0x0F) *4 #shows where payload is beings
+        # & 0x0F extracts lower four bits, it is measured in bits, *4 convert to bytes
+
+            #   0100 0101   <- data[0] (Version + IHL)
+            # & 0000 1111   <- 0x0F    (The Mask)
+        
+            #   0000 0101   <- Result  (Version is erased; only IHL remains)
+            
+        ttl = data[8] #8th bytes of the IPv4 header is ttl
+
+        #extractring 8-byte icmp header
         icmp_type, _code, _csum, r_id, r_seq = struct.unpack("!BBHHH", data[ihl:ihl + 8])
 
+        # Ignore other ICMP traffic; only accept the reply to our request
         if icmp_type == ICMP_ECHO_REPLY and r_id == ident and r_seq == seq:
             return rtt, ttl, addr[0]
 
+def main():
+    if len(sys.argv) != 2: #len must be 2
+        sys.exit("usage: sudo python3 ping.py <host>")
+
+    #argv = ping.py example.com
+
+    host = sys.argv[1] #example.com
+    dest_ip = socket.gethostbyname(host) #resolve an ipv4 addr
+    ident = os.getpid() & 0xFFFF #return current process id and keeps only lower 16 bits
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+    #creating raw icmp soket
+    #AF_INET - IPv4
+    #SOCK_RAW - access to raw packet data
+    #IPPROTO_ICMP - icmp protocol
+
+    print(f"PING {host} ({dest_ip})")
+
+    for seq in range(1,5): #sending four ping requests
+        result = ping_once(sock, dest_ip, ident, seq) #sends packet and waits 2 second
+        if result is None:
+            print(f"seq={seq}: request timed out")
+        else: #unpacks valuest and prints
+            rtt, ttl, src = result
+            print(f"reply from {src}: seq={seq} ttl={ttl} time={rtt:.1f} ms")
+
+        time.sleep(1) #waits 1 sec before sending another
+
+if __name__ == "__main__":
+    main()
