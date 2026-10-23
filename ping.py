@@ -39,3 +39,24 @@ def build_packet(ident: int, seq: int) -> bytes:
     header = struct.pack("!BBHHH", ICMP_ECHO_REQUEST,0 ,csum, ident, seq)
     return header +payload #8bytes + 16bytes | complete packet
 
+def ping_once(sock, dest_ip, ident, seq, timeout=2.0):
+    sock.sendto(build_packet(ident,seq), (dest_ip, 0))
+    start = time.time()
+    while True:
+        remaining = timeout - (time.time() - start)
+        if remaining <= 0:
+            return None
+        sock.setttimeout(remaining)
+        try:
+            data, addr = sock.recvfrom(1024)
+        except socket.timeout:
+            return None
+        rtt =(time.time()-start)*1000
+
+        ihl = (data[0] & 0x0F) *4
+        ttl = data[8]
+        icmp_type, _code, _csum, r_id, r_seq = struct.unpack("!BBHHH", data[ihl:ihl + 8])
+
+        if icmp_type == ICMP_ECHO_REPLY and r_id == ident and r_seq == seq:
+            return rtt, ttl, addr[0]
+
