@@ -10,6 +10,14 @@ MAX_HOPS = 30
 PROBES_PER_HOP = 3
 TIMEOUT = 2.0
 
+def reverse_dns(ip, cache):
+    if ip not in cache:
+        try:
+            cache[ip] = socket.gethostbyaddr(ip)[0]
+        except (socket.herror, socket.gaierror, socket.timeout):
+            cache[ip] = ip
+    return cache[ip]
+
 def probe(sock, dest_ip, ident, seq, ttl):
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_TTL, ttl) #sets ipv4 ttl packets though this socket
     sock.sendto(build_packet(ident, seq), (dest_ip, 0)) #send echo req
@@ -80,6 +88,9 @@ def main():
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
     print(f"traceroute to {host} ({dest_ip}), max {MAX_HOPS} hops")
+    print(f"{'Hop':>3}  {'Responder':<30}  {'Probe 1':>12}  {'Probe 2':>12}  {'Probe 3':>12}")
+    print("-" * 82)
+    reverse_dns_cache = {}
 
     for ttl in range(1, MAX_HOPS+1):
         results = []
@@ -93,15 +104,26 @@ def main():
                 reached_destination = True
 
         routers = {result[1] for result in results if result is not None} #set of router adds, without timeouts
-        output = next(iter(routers)) if len(routers) == 1 else ""
+        router_names = {
+            router: reverse_dns(router, reverse_dns_cache)
+            for router in routers
+        }
+        responder = next(iter(router_names.values())) if len(routers) == 1 else "multiple responders"
+        probe_outputs = []
         for result in results:
             if result is None:
-                output += "  *"
+                probe_outputs.append("*")
             elif len(routers) == 1:
-                output += f"  {result[2]:.1f} ms"
+                probe_outputs.append(f"{result[2]:.1f} ms")
             else:
-                output += f"  {result[1]} {result[2]:.1f} ms"
-        print(f"{ttl:2d} {output}")
+                probe_outputs.append(
+                    f"{router_names[result[1]]} ({result[2]:.1f} ms)"
+                )
+        print(
+            f"{ttl:>3}  {responder:<30.30}  "
+            f"{probe_outputs[0]:>12.12}  {probe_outputs[1]:>12.12}  "
+            f"{probe_outputs[2]:>12.12}"
+        )
 
         if reached_destination:
             break
